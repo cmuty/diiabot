@@ -2,12 +2,12 @@
 Simple Flask server to run bot on Render (Web Service)
 """
 import asyncio
-import threading
 import logging
 from flask import Flask, jsonify
 from flask_cors import CORS
 import os
 from dotenv import load_dotenv
+from multiprocessing import Process
 
 load_dotenv()
 
@@ -20,19 +20,16 @@ app = Flask(__name__)
 CORS(app)
 
 # Bot status
-bot_status = {"running": False, "error": None}
+bot_status = {"running": True, "error": None}
 
 def run_bot():
-    """Run bot in background thread"""
+    """Run bot in separate process"""
     try:
         from bot.bot import main
-        bot_status["running"] = True
-        logger.info("Starting bot...")
+        logger.info("Starting bot in separate process...")
         asyncio.run(main())
     except Exception as e:
         logger.error(f"Bot error: {e}")
-        bot_status["error"] = str(e)
-        bot_status["running"] = False
 
 @app.route('/')
 def index():
@@ -40,8 +37,7 @@ def index():
     return jsonify({
         "status": "ok",
         "service": "Diia Telegram Bot",
-        "bot_running": bot_status["running"],
-        "error": bot_status["error"]
+        "bot_running": bot_status["running"]
     })
 
 @app.route('/health')
@@ -50,9 +46,9 @@ def health():
     return jsonify({"status": "ok"}), 200
 
 if __name__ == "__main__":
-    # Start bot in background thread
-    bot_thread = threading.Thread(target=run_bot, daemon=True)
-    bot_thread.start()
+    # Start bot in separate process
+    bot_process = Process(target=run_bot, daemon=True)
+    bot_process.start()
     
     # Start Flask server
     port = int(os.getenv("PORT", 10000))
