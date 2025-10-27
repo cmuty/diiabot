@@ -235,27 +235,79 @@ async def download_app(callback: CallbackQuery, db):
         )
         return
     
-    # Check if IPA file exists
-    ipa_path = "uploads/ipa/MaijeDiia.ipa"
-    if not os.path.exists(ipa_path):
-        await callback.answer("❌ IPA файл не знайдено. Зверніться до адміністратора.", show_alert=True)
-        return
+    # Get IPA URL from Cloudinary (set in environment variable)
+    ipa_url = os.getenv("IPA_CLOUDINARY_URL")
     
-    try:
-        # Send the file
-        ipa_file = FSInputFile(ipa_path)
-        await callback.message.answer_document(
-            ipa_file,
-            caption="📲 Завантаження застосунку\n\n"
-                    "Для коректної роботи, перезапустіть застосунок після першого входу"
-        )
-    except Exception as e:
+    if not ipa_url:
         await callback.answer(
-            f"❌ Помилка завантаження: {str(e)}",
+            "❌ Застосунок тимчасово недоступний. Зверніться до адміністратора.",
             show_alert=True
         )
         return
     
+    try:
+        # Send download link with instructions
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="📥 Завантажити IPA", url=ipa_url)],
+            [InlineKeyboardButton(text="📖 Інструкція по встановленню", callback_data="install_guide")],
+            [InlineKeyboardButton(text="⬅️ Назад до меню", callback_data="back_to_menu")]
+        ])
+        
+        await callback.message.edit_text(
+            "📲 <b>Завантаження застосунку Майже Дія</b>\n\n"
+            "✅ Ваша підписка активна!\n\n"
+            "📋 <b>Кроки для встановлення:</b>\n"
+            "1️⃣ Натисніть кнопку нижче для завантаження .ipa файлу\n"
+            "2️⃣ Встановіть через Sideloadly, AltStore або інший додаток\n"
+            "3️⃣ Після встановлення запустіть застосунок\n"
+            "4️⃣ Увійдіть використовуючи свій логін і пароль\n"
+            "5️⃣ Перезапустіть застосунок для коректної роботи\n\n"
+            "⚠️ <b>Важливо:</b> Для входу використовуйте логін і пароль, які ви створили при реєстрації в боті",
+            reply_markup=keyboard,
+            parse_mode="HTML"
+        )
+        await callback.answer()
+    except Exception as e:
+        await callback.answer(
+            f"❌ Помилка: {str(e)}",
+            show_alert=True
+        )
+
+
+@router.callback_query(F.data == "install_guide")
+async def install_guide(callback: CallbackQuery):
+    """Show installation guide"""
+    guide_text = (
+        "📖 <b>Інструкція по встановленню Майже Дія</b>\n\n"
+        "<b>📱 Спосіб 1: Sideloadly (Рекомендовано)</b>\n"
+        "1. Завантажте Sideloadly з офіційного сайту\n"
+        "2. Підключіть iPhone до комп'ютера\n"
+        "3. Відкрийте Sideloadly і перетягніть .ipa файл\n"
+        "4. Введіть свій Apple ID (дані НЕ зберігаються)\n"
+        "5. Натисніть Start і дочекайтеся встановлення\n"
+        "6. На iPhone: Налаштування → Основні → VPN та керування пристроєм\n"
+        "7. Довіріть сертифікату розробника\n\n"
+        "<b>📱 Спосіб 2: AltStore</b>\n"
+        "1. Встановіть AltServer на комп'ютер\n"
+        "2. Встановіть AltStore на iPhone\n"
+        "3. Відкрийте AltStore на iPhone\n"
+        "4. Натисніть + та оберіть .ipa файл\n"
+        "5. Дочекайтеся встановлення\n\n"
+        "⚠️ <b>Важливо:</b>\n"
+        "• Застосунок потрібно оновлювати кожні 7 днів\n"
+        "• Використовуйте логін та пароль з бота для входу\n"
+        "• Перезапустіть застосунок після першого входу"
+    )
+    
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data="download_app")]
+    ])
+    
+    await callback.message.edit_text(
+        guide_text,
+        reply_markup=keyboard,
+        parse_mode="HTML"
+    )
     await callback.answer()
 
 
