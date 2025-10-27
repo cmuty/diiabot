@@ -1,0 +1,28 @@
+services:
+  - type: web
+    name: diia-bot
+    runtime: python
+    plan: free
+    pythonVersion: 3.11.9
+    buildCommand: pip install -r requirements.txt
+    startCommand: python server.py
+    envVars:
+      - key: BOT_TOKEN
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: ADMIN_IDS
+        sync: false
+      - key: CRYPTOPAY_TOKEN
+        sync: false
+      - key: CLOUDINARY_CLOUD_NAME
+        sync: false
+      - key: CLOUDINARY_API_KEY
+        sync: false
+      - key: CLOUDINARY_API_SECRET
+        sync: false
+      - key: CLOUDINARY_URL
+        sync: false
+    healthCheckPath: /
+    autoDeploy: true
+
