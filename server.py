@@ -84,13 +84,14 @@ def health():
     return jsonify({"status": "ok"}), 200
 
 @app.route('/webhook', methods=['POST'])
-async def webhook():
+def webhook():
     """Handle incoming updates from Telegram"""
     if request.method == "POST":
         try:
             update_data = request.get_json()
             update = Update(**update_data)
-            await dp.feed_update(bot, update)
+            # Run async function in event loop
+            asyncio.run(dp.feed_update(bot, update))
             return jsonify({"ok": True}), 200
         except Exception as e:
             logger.error(f"Error processing update: {e}")
