@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import Update
+import threading
 
 load_dotenv()
 
@@ -25,6 +26,7 @@ CORS(app)
 bot = None
 dp = None
 db = None
+loop = None
 
 async def setup_bot():
     """Initialize bot, dispatcher and database"""
@@ -83,6 +85,11 @@ def health():
     """Health check endpoint for Render"""
     return jsonify({"status": "ok"}), 200
 
+def run_async(coro):
+    """Run async coroutine in the background event loop"""
+    future = asyncio.run_coroutine_threadsafe(coro, loop)
+    return future.result()
+
 @app.route('/webhook', methods=['POST'])
 def webhook():
     """Handle incoming updates from Telegram"""
@@ -90,17 +97,29 @@ def webhook():
         try:
             update_data = request.get_json()
             update = Update(**update_data)
-            # Run async function in event loop
-            asyncio.run(dp.feed_update(bot, update))
+            # Run async function in background event loop
+            run_async(dp.feed_update(bot, update))
             return jsonify({"ok": True}), 200
         except Exception as e:
             logger.error(f"Error processing update: {e}")
             return jsonify({"ok": False, "error": str(e)}), 500
     return jsonify({"ok": False}), 405
 
+def start_background_loop(loop):
+    """Start the event loop in a background thread"""
+    asyncio.set_event_loop(loop)
+    loop.run_forever()
+
 if __name__ == "__main__":
-    # Initialize bot before starting Flask
-    asyncio.run(setup_bot())
+    # Create a new event loop for background tasks
+    global loop
+    loop = asyncio.new_event_loop()
+    
+    # Start the event loop in a background thread
+    threading.Thread(target=start_background_loop, args=(loop,), daemon=True).start()
+    
+    # Initialize bot
+    asyncio.run_coroutine_threadsafe(setup_bot(), loop).result()
     
     # Start Flask server
     port = int(os.getenv("PORT", 10000))
