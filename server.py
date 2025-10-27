@@ -110,17 +110,25 @@ def start_background_loop(loop):
     asyncio.set_event_loop(loop)
     loop.run_forever()
 
+def init_bot():
+    """Initialize bot and event loop - called on module load"""
+    global loop
+    if loop is None:
+        # Create a new event loop for background tasks
+        loop = asyncio.new_event_loop()
+        
+        # Start the event loop in a background thread
+        threading.Thread(target=start_background_loop, args=(loop,), daemon=True).start()
+        
+        # Initialize bot
+        asyncio.run_coroutine_threadsafe(setup_bot(), loop).result()
+        logger.info("✅ Bot initialization complete")
+
+# Initialize bot when module is loaded
+init_bot()
+
 if __name__ == "__main__":
-    # Create a new event loop for background tasks
-    loop = asyncio.new_event_loop()
-    
-    # Start the event loop in a background thread
-    threading.Thread(target=start_background_loop, args=(loop,), daemon=True).start()
-    
-    # Initialize bot
-    asyncio.run_coroutine_threadsafe(setup_bot(), loop).result()
-    
-    # Start Flask server
+    # Start Flask server (for local development)
     port = int(os.getenv("PORT", 10000))
     logger.info(f"Starting Flask server on port {port}")
     app.run(host="0.0.0.0", port=port)
