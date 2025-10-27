@@ -111,7 +111,6 @@ def start_background_loop(loop):
     loop.run_forever()
 
 if __name__ == "__main__":
-    global loop
     # Create a new event loop for background tasks
     loop = asyncio.new_event_loop()
     
