@@ -9,6 +9,7 @@ import asyncpg
 import aiosqlite
 from datetime import datetime
 from typing import Optional, Dict, Any, List
+from urllib.parse import urlparse, parse_qs
 import json
 
 
@@ -38,26 +39,55 @@ class Database:
     async def connect(self):
         """Create connection pool for PostgreSQL"""
         if self.is_postgres and not self.pool:
-            # Для облачных провайдеров (Render, Heroku и т.д.) требуется SSL
-            # Проверяем переменную окружения или используем SSL по умолчанию
-            ssl_mode = os.getenv("POSTGRES_SSL", "require")
-            
-            # Модифицируем URL для добавления sslmode если нужно
-            db_url = self.db_url
-            if ssl_mode.lower() != "disable" and ssl_mode.lower() != "false":
-                # Добавляем sslmode=require в URL если его там нет
-                if "sslmode=" not in db_url:
-                    separator = "&" if "?" in db_url else "?"
-                    db_url = f"{db_url}{separator}sslmode=require"
-            
-            # Для Render.com используем только URL параметр sslmode=require
-            # asyncpg автоматически обработает SSL из URL параметра
-            # Не передаем SSL контекст явно, чтобы избежать проблем с соединением
-            self.pool = await asyncpg.create_pool(
-                db_url, 
-                min_size=1, 
-                max_size=10
-            )
+            try:
+                # Парсим URL для извлечения параметров
+                parsed = urlparse(self.db_url)
+                
+                # Извлекаем параметры из URL
+                host = parsed.hostname
+                port = parsed.port or 5432
+                user = parsed.username
+                password = parsed.password
+                database = parsed.path.lstrip('/')
+                
+                # Проверяем что все параметры есть
+                if not all([host, user, password, database]):
+                    raise ValueError(f"Missing required database parameters. Host: {host}, User: {user}, Database: {database}")
+                
+                print(f"🔌 Подключение к PostgreSQL: {user}@{host}:{port}/{database}")
+                
+                # Проверяем переменную окружения для SSL
+                ssl_mode = os.getenv("POSTGRES_SSL", "require")
+                
+                # Настраиваем SSL для Render.com
+                ssl_config = None
+                if ssl_mode.lower() != "disable" and ssl_mode.lower() != "false":
+                    # Создаем SSL контекст для Render.com
+                    # Render.com требует SSL, но не требует проверки сертификата
+                    ssl_config = ssl.create_default_context()
+                    ssl_config.check_hostname = False
+                    ssl_config.verify_mode = ssl.CERT_NONE
+                    print("🔒 Используется SSL соединение")
+                else:
+                    print("⚠️ SSL отключен")
+                
+                # Создаем пул с явными параметрами
+                self.pool = await asyncpg.create_pool(
+                    host=host,
+                    port=port,
+                    user=user,
+                    password=password,
+                    database=database,
+                    min_size=1,
+                    max_size=10,
+                    ssl=ssl_config,
+                    command_timeout=60  # Таймаут для команд
+                )
+                print("✅ Пул соединений создан успешно")
+            except Exception as e:
+                print(f"❌ Ошибка подключения к базе данных: {e}")
+                print(f"   URL: {self.db_url[:50]}...")  # Показываем только начало URL (без пароля)
+                raise
     
     async def close(self):
         """Close connection pool"""

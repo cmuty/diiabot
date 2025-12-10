@@ -27,6 +27,8 @@ bot = None
 dp = None
 db = None
 loop = None
+_initialized = False
+_initializing = False
 
 async def setup_bot():
     """Initialize bot, dispatcher and database"""
@@ -74,10 +76,12 @@ async def setup_bot():
 @app.route('/')
 def index():
     """Root endpoint"""
+    ensure_initialized()
     return jsonify({
         "status": "ok",
         "service": "Diia Telegram Bot",
-        "mode": "webhook"
+        "mode": "webhook",
+        "initialized": _initialized
     })
 
 @app.route('/health')
@@ -87,14 +91,23 @@ def health():
 
 def run_async(coro):
     """Run async coroutine in the background event loop"""
+    if loop is None:
+        raise RuntimeError("Event loop not initialized")
     future = asyncio.run_coroutine_threadsafe(coro, loop)
-    return future.result()
+    return future.result(timeout=30)  # Таймаут для выполнения
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
     """Handle incoming updates from Telegram"""
     if request.method == "POST":
         try:
+            # Убеждаемся что бот инициализирован
+            ensure_initialized()
+            
+            if not _initialized or bot is None or dp is None:
+                logger.warning("Bot not initialized yet, waiting...")
+                return jsonify({"ok": False, "error": "Bot is initializing"}), 503
+            
             update_data = request.get_json()
             update = Update(**update_data)
             # Run async function in background event loop
@@ -110,21 +123,47 @@ def start_background_loop(loop):
     asyncio.set_event_loop(loop)
     loop.run_forever()
 
-def init_bot():
-    """Initialize bot and event loop - called on module load"""
-    global loop
-    if loop is None:
-        # Create a new event loop for background tasks
-        loop = asyncio.new_event_loop()
-        
-        # Start the event loop in a background thread
-        threading.Thread(target=start_background_loop, args=(loop,), daemon=True).start()
+def ensure_initialized():
+    """Ensure bot is initialized (lazy initialization)"""
+    global loop, _initialized, _initializing
+    
+    if _initialized:
+        return
+    
+    if _initializing:
+        # Ждем пока инициализация завершится
+        import time
+        for _ in range(60):  # Ждем до 60 секунд
+            if _initialized:
+                return
+            time.sleep(1)
+        return
+    
+    _initializing = True
+    
+    try:
+        if loop is None:
+            # Create a new event loop for background tasks
+            loop = asyncio.new_event_loop()
+            
+            # Start the event loop in a background thread
+            threading.Thread(target=start_background_loop, args=(loop,), daemon=True).start()
         
         # Initialize bot
-        asyncio.run_coroutine_threadsafe(setup_bot(), loop).result()
+        asyncio.run_coroutine_threadsafe(setup_bot(), loop).result(timeout=120)
+        _initialized = True
         logger.info("✅ Bot initialization complete")
+    except Exception as e:
+        logger.error(f"❌ Bot initialization failed: {e}")
+        _initializing = False
+        raise
 
-# Initialize bot when module is loaded
+def init_bot():
+    """Initialize bot and event loop - called on module load"""
+    # Ленивая инициализация - не блокируем загрузку модуля
+    threading.Thread(target=ensure_initialized, daemon=True).start()
+
+# Initialize bot when module is loaded (в фоне)
 init_bot()
 
 if __name__ == "__main__":
