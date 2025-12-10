@@ -3,6 +3,7 @@ Database models with PostgreSQL support
 Supports both SQLite (local) and PostgreSQL (production)
 """
 import os
+import ssl
 import bcrypt
 import asyncpg
 import aiosqlite
@@ -38,31 +39,27 @@ class Database:
         """Create connection pool for PostgreSQL"""
         if self.is_postgres and not self.pool:
             # Для облачных провайдеров (Render, Heroku и т.д.) требуется SSL
-            # Проверяем переменную окружения или используем 'require' по умолчанию
+            # Проверяем переменную окружения или используем SSL по умолчанию
             ssl_mode = os.getenv("POSTGRES_SSL", "require")
             
-            # asyncpg принимает 'require' для обязательного SSL, None для отключения
+            # asyncpg принимает SSL контекст или True/False
             if ssl_mode.lower() == "disable" or ssl_mode.lower() == "false":
-                ssl_config = None
+                ssl_config = False
             else:
-                # По умолчанию требуем SSL (для Render.com и других облачных провайдеров)
-                # asyncpg использует строку 'require' для обязательного SSL
-                ssl_config = 'require'
+                # Для Render.com и других облачных провайдеров создаем SSL контекст
+                # с отключенной проверкой сертификата (для совместимости)
+                ssl_context = ssl.create_default_context()
+                ssl_context.check_hostname = False
+                ssl_context.verify_mode = ssl.CERT_NONE
+                ssl_config = ssl_context
             
             # Создаем пул с SSL конфигурацией
-            if ssl_config:
-                self.pool = await asyncpg.create_pool(
-                    self.db_url, 
-                    min_size=1, 
-                    max_size=10,
-                    ssl=ssl_config
-                )
-            else:
-                self.pool = await asyncpg.create_pool(
-                    self.db_url, 
-                    min_size=1, 
-                    max_size=10
-                )
+            self.pool = await asyncpg.create_pool(
+                self.db_url, 
+                min_size=1, 
+                max_size=10,
+                ssl=ssl_config
+            )
     
     async def close(self):
         """Close connection pool"""
