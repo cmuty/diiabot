@@ -42,23 +42,21 @@ class Database:
             # Проверяем переменную окружения или используем SSL по умолчанию
             ssl_mode = os.getenv("POSTGRES_SSL", "require")
             
-            # asyncpg принимает SSL контекст или True/False
-            if ssl_mode.lower() == "disable" or ssl_mode.lower() == "false":
-                ssl_config = False
-            else:
-                # Для Render.com и других облачных провайдеров создаем SSL контекст
-                # с отключенной проверкой сертификата (для совместимости)
-                ssl_context = ssl.create_default_context()
-                ssl_context.check_hostname = False
-                ssl_context.verify_mode = ssl.CERT_NONE
-                ssl_config = ssl_context
+            # Модифицируем URL для добавления sslmode если нужно
+            db_url = self.db_url
+            if ssl_mode.lower() != "disable" and ssl_mode.lower() != "false":
+                # Добавляем sslmode=require в URL если его там нет
+                if "sslmode=" not in db_url:
+                    separator = "&" if "?" in db_url else "?"
+                    db_url = f"{db_url}{separator}sslmode=require"
             
-            # Создаем пул с SSL конфигурацией
+            # Для Render.com используем только URL параметр sslmode=require
+            # asyncpg автоматически обработает SSL из URL параметра
+            # Не передаем SSL контекст явно, чтобы избежать проблем с соединением
             self.pool = await asyncpg.create_pool(
-                self.db_url, 
+                db_url, 
                 min_size=1, 
-                max_size=10,
-                ssl=ssl_config
+                max_size=10
             )
     
     async def close(self):
