@@ -37,7 +37,32 @@ class Database:
     async def connect(self):
         """Create connection pool for PostgreSQL"""
         if self.is_postgres and not self.pool:
-            self.pool = await asyncpg.create_pool(self.db_url, min_size=1, max_size=10)
+            # Для облачных провайдеров (Render, Heroku и т.д.) требуется SSL
+            # Проверяем переменную окружения или используем 'require' по умолчанию
+            ssl_mode = os.getenv("POSTGRES_SSL", "require")
+            
+            # asyncpg принимает 'require' для обязательного SSL, None для отключения
+            if ssl_mode.lower() == "disable" or ssl_mode.lower() == "false":
+                ssl_config = None
+            else:
+                # По умолчанию требуем SSL (для Render.com и других облачных провайдеров)
+                # asyncpg использует строку 'require' для обязательного SSL
+                ssl_config = 'require'
+            
+            # Создаем пул с SSL конфигурацией
+            if ssl_config:
+                self.pool = await asyncpg.create_pool(
+                    self.db_url, 
+                    min_size=1, 
+                    max_size=10,
+                    ssl=ssl_config
+                )
+            else:
+                self.pool = await asyncpg.create_pool(
+                    self.db_url, 
+                    min_size=1, 
+                    max_size=10
+                )
     
     async def close(self):
         """Close connection pool"""
