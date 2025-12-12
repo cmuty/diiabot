@@ -10,7 +10,7 @@ services:
       - key: BOT_TOKEN
         sync: false
       - key: DATABASE_URL
-        sync: false
+        value: "postgresql://diabd2_user:4tXdvUBZ7gzA6HjtiCl9qE51ZNGdFf9Q@dpg-d4ngo60bdp1s73bla2k0-a.frankfurt-postgres.render.com/diabd2"
       - key: ADMIN_IDS
         sync: false
       - key: CRYPTOPAY_TOKEN
