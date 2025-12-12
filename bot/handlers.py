@@ -37,6 +37,7 @@ class RegistrationStates(StatesGroup):
     waiting_for_photo = State()
     waiting_for_login = State()
     waiting_for_password = State()
+    preview = State()  # Предпросмотр данных перед сохранением
 
 
 class TicketStates(StatesGroup):
@@ -944,11 +945,23 @@ async def process_full_name(message: Message, state: FSMContext, db):
     _, data = await db.get_registration_state(message.from_user.id)
     data['full_name'] = full_name
     
+    # Если все данные уже заполнены (редактирование из предпросмотра), показываем предпросмотр
+    if data.get('login') and data.get('password') and data.get('birth_date') and data.get('photo_path'):
+        await show_registration_preview(message, state, db, data, data.get('is_editing', False))
+        return
+    
     await message.answer(
         "🛑 Зауваження: дата народження не може бути менша ніж 2000 рік та не більша ніж 2014.\n\n"
         "2) Напишіть вашу дату народження в такому форматі:\n"
         "24.08.2000"
     )
+    
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="⬅️ Назад (змінити ПІБ)", callback_data="reg_back_full_name")],
+        [InlineKeyboardButton(text="❌ Скасувати реєстрацію", callback_data="cancel_registration")]
+    ])
+    
+    await message.answer("💡 Ви можете повернутися назад або скасувати реєстрацію", reply_markup=keyboard)
     
     await state.set_state(RegistrationStates.waiting_for_birth_date)
     await db.save_registration_state(message.from_user.id, "waiting_for_birth_date", data)
@@ -988,10 +1001,22 @@ async def process_birth_date(message: Message, state: FSMContext, db):
     _, data = await db.get_registration_state(message.from_user.id)
     data['birth_date'] = birth_date
     
+    # Если все данные уже заполнены (редактирование из предпросмотра), показываем предпросмотр
+    if data.get('login') and data.get('password') and data.get('full_name') and data.get('photo_path'):
+        await show_registration_preview(message, state, db, data, data.get('is_editing', False))
+        return
+    
     await message.answer(
         "🤳 Відправте своє фото формату 3х4, як показано на прикладі.\n\n"
         "🛑 САМЕ 3х4!!!"
     )
+    
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="⬅️ Назад (змінити дату)", callback_data="reg_back_birth_date")],
+        [InlineKeyboardButton(text="❌ Скасувати реєстрацію", callback_data="cancel_registration")]
+    ])
+    
+    await message.answer("💡 Ви можете повернутися назад або скасувати реєстрацію", reply_markup=keyboard)
     
     await state.set_state(RegistrationStates.waiting_for_photo)
     await db.save_registration_state(message.from_user.id, "waiting_for_photo", data)
@@ -1024,6 +1049,11 @@ async def process_photo(message: Message, state: FSMContext, db, bot):
         
         _, data = await db.get_registration_state(message.from_user.id)
         data['photo_path'] = cloudinary_url
+        
+        # Если все данные уже заполнены (редактирование из предпросмотра), показываем предпросмотр
+        if data.get('login') and data.get('password') and data.get('full_name') and data.get('birth_date'):
+            await show_registration_preview(message, state, db, data, data.get('is_editing', False))
+            return
     except Exception as e:
         await message.answer(f"❌ Помилка завантаження фото: {str(e)}\nСпробуйте ще раз.")
         return
@@ -1036,6 +1066,13 @@ async def process_photo(message: Message, state: FSMContext, db, bot):
         "🛑 Уточнення: довжина логіна та паролю повинна бути від 4 до 16 символів.\n\n"
         "🪶 Введіть логін:"
     )
+    
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="⬅️ Назад (змінити фото)", callback_data="reg_back_photo")],
+        [InlineKeyboardButton(text="❌ Скасувати реєстрацію", callback_data="cancel_registration")]
+    ])
+    
+    await message.answer("💡 Ви можете повернутися назад або скасувати реєстрацію", reply_markup=keyboard)
     
     await state.set_state(RegistrationStates.waiting_for_login)
     await db.save_registration_state(message.from_user.id, "waiting_for_login", data)
@@ -1080,11 +1117,23 @@ async def process_login(message: Message, state: FSMContext, db):
     
     data['login'] = login
     
+    # Если все данные уже заполнены (редактирование из предпросмотра), показываем предпросмотр
+    if data.get('password') and data.get('full_name') and data.get('birth_date') and data.get('photo_path'):
+        await show_registration_preview(message, state, db, data, data.get('is_editing', False))
+        return
+    
     await message.answer(
         "🛑 Уточнення: ми не знаємо ваших паролів, одразу після його написання, "
         "ми видалимо повідомлення в Телеграммі.\n\n"
         "Придумайте пароль та напишіть його."
     )
+    
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="⬅️ Назад (змінити логін)", callback_data="reg_back_login")],
+        [InlineKeyboardButton(text="❌ Скасувати реєстрацію", callback_data="cancel_registration")]
+    ])
+    
+    await message.answer("💡 Ви можете повернутися назад або скасувати реєстрацію", reply_markup=keyboard)
     
     await state.set_state(RegistrationStates.waiting_for_password)
     await db.save_registration_state(message.from_user.id, "waiting_for_password", data)
@@ -1092,7 +1141,7 @@ async def process_login(message: Message, state: FSMContext, db):
 
 @router.message(RegistrationStates.waiting_for_password)
 async def process_password(message: Message, state: FSMContext, db):
-    """Process password and complete registration"""
+    """Process password and show preview"""
     password = message.text.strip()
     
     # Delete password message
@@ -1111,14 +1160,77 @@ async def process_password(message: Message, state: FSMContext, db):
     
     # Get registration data
     _, data = await db.get_registration_state(message.from_user.id)
+    data['password'] = password  # Временно сохраняем для предпросмотра
     is_editing = data.get('is_editing', False)
+    
+    # Показываем предпросмотр данных
+    await show_registration_preview(message, state, db, data, is_editing)
+
+
+async def show_registration_preview(message_or_callback, state: FSMContext, db, data: dict, is_editing: bool = False):
+    """Показать предпросмотр всех данных перед сохранением"""
+    from aiogram.types import Message, CallbackQuery
+    
+    # Определяем user_id
+    if isinstance(message_or_callback, Message):
+        user_id = message_or_callback.from_user.id
+        send_func = lambda text, **kwargs: message_or_callback.answer(text, **kwargs)
+    else:
+        user_id = message_or_callback.from_user.id
+        send_func = lambda text, **kwargs: message_or_callback.message.edit_text(text, **kwargs)
+        await message_or_callback.answer()
+    
+    # Формируем текст предпросмотра
+    preview_text = (
+        "📋 **ПЕРЕДПЕРЕГЛЯД ДАНИХ**\n\n"
+        "Перевірте всі дані перед збереженням:\n\n"
+        f"👤 **ПІБ:** {data.get('full_name', 'Не вказано')}\n"
+        f"🗓️ **Дата народження:** {data.get('birth_date', 'Не вказано')}\n"
+        f"📸 **Фото:** {'✅ Завантажено' if data.get('photo_path') else '❌ Не завантажено'}\n"
+        f"🔑 **Логін:** {data.get('login', 'Не вказано')}\n"
+        f"🔒 **Пароль:** {'✅ Встановлено' if data.get('password') else '❌ Не встановлено'}\n\n"
+        "⚠️ Після підтвердження дані будуть збережені!"
+    )
+    
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✅ Підтвердити та зберегти", callback_data="confirm_registration")],
+        [
+            InlineKeyboardButton(text="✏️ Змінити ПІБ", callback_data="reg_edit_full_name"),
+            InlineKeyboardButton(text="✏️ Змінити дату", callback_data="reg_edit_birth_date")
+        ],
+        [
+            InlineKeyboardButton(text="✏️ Змінити фото", callback_data="reg_edit_photo"),
+            InlineKeyboardButton(text="✏️ Змінити логін", callback_data="reg_edit_login")
+        ],
+        [
+            InlineKeyboardButton(text="✏️ Змінити пароль", callback_data="reg_edit_password"),
+            InlineKeyboardButton(text="❌ Скасувати", callback_data="cancel_registration")
+        ]
+    ])
+    
+    await send_func(preview_text, reply_markup=keyboard, parse_mode="Markdown")
+    
+    await state.set_state(RegistrationStates.preview)
+    await db.save_registration_state(user_id, "preview", data)
+
+
+@router.callback_query(F.data == "confirm_registration")
+async def confirm_registration(callback: CallbackQuery, state: FSMContext, db):
+    """Подтвердить и сохранить регистрацию"""
+    _, data = await db.get_registration_state(callback.from_user.id)
+    is_editing = data.get('is_editing', False)
+    password = data.get('password')
+    
+    if not password:
+        await callback.answer("❌ Помилка: пароль не вказано", show_alert=True)
+        return
     
     success = False
     
     if is_editing:
         # Update existing user
         success = await db.update_user(
-            telegram_id=message.from_user.id,
+            telegram_id=callback.from_user.id,
             full_name=data['full_name'],
             birth_date=data['birth_date'],
             photo_path=data['photo_path'],
@@ -1128,8 +1240,8 @@ async def process_password(message: Message, state: FSMContext, db):
     else:
         # Create new user
         user_id = await db.create_user(
-            telegram_id=message.from_user.id,
-            username=message.from_user.username,
+            telegram_id=callback.from_user.id,
+            username=callback.from_user.username,
             full_name=data['full_name'],
             birth_date=data['birth_date'],
             photo_path=data['photo_path'],
@@ -1148,7 +1260,7 @@ async def process_password(message: Message, state: FSMContext, db):
                 [InlineKeyboardButton(text="📋 Меню", callback_data="back_to_menu")]
             ])
             
-            await message.answer(
+            await callback.message.edit_text(
                 f"✅ Реєстрація {action_text}!\n\n"
                 f"👤 ПІБ: {data['full_name']}\n"
                 f"🗓️ Дата народження: {data['birth_date']}\n"
@@ -1159,7 +1271,7 @@ async def process_password(message: Message, state: FSMContext, db):
                 reply_markup=keyboard
             )
         else:
-            await message.answer(
+            await callback.message.edit_text(
                 f"✅ Реєстрація {action_text}!\n\n"
                 f"👤 ПІБ: {data['full_name']}\n"
                 f"🗓️ Дата народження: {data['birth_date']}\n"
@@ -1168,12 +1280,11 @@ async def process_password(message: Message, state: FSMContext, db):
             )
         
         # Clear registration state
-        await db.clear_registration_state(message.from_user.id)
+        await db.clear_registration_state(callback.from_user.id)
         await state.clear()
+        await callback.answer("✅ Дані збережено!")
     else:
-        await message.answer(
-            "❌ Помилка реєстрації. Спробуйте ще раз або зверніться до адміністратора."
-        )
+        await callback.answer("❌ Помилка збереження. Спробуйте ще раз.", show_alert=True)
 
 
 @router.message(Command("cancel"))
@@ -1185,6 +1296,155 @@ async def cmd_cancel(message: Message, state: FSMContext, db):
         "❌ Реєстрація скасована.\n\n"
         "Використовуйте /menu для повернення в головне меню."
     )
+
+
+# Обработчики для возврата назад и редактирования
+@router.callback_query(F.data == "cancel_registration")
+async def cancel_registration_callback(callback: CallbackQuery, state: FSMContext, db):
+    """Отменить регистрацию"""
+    await state.clear()
+    await db.clear_registration_state(callback.from_user.id)
+    await callback.message.edit_text(
+        "❌ Реєстрація скасована.\n\n"
+        "Використовуйте /menu для повернення в головне меню."
+    )
+    await callback.answer("Реєстрацію скасовано")
+
+
+@router.callback_query(F.data == "reg_back_full_name")
+async def reg_back_full_name(callback: CallbackQuery, state: FSMContext, db):
+    """Вернуться к шагу ввода ПІБ"""
+    await callback.message.edit_text(
+        "💻 Почнемо заповнювати інформацію про Вас.\n\n"
+        "1) Напишіть ваше ПІБ в такому форматі:\n"
+        "Маск Ілон Максимович"
+    )
+    await state.set_state(RegistrationStates.waiting_for_full_name)
+    _, data = await db.get_registration_state(callback.from_user.id)
+    await db.save_registration_state(callback.from_user.id, "waiting_for_full_name", data)
+    await callback.answer()
+
+
+@router.callback_query(F.data == "reg_back_birth_date")
+async def reg_back_birth_date(callback: CallbackQuery, state: FSMContext, db):
+    """Вернуться к шагу ввода даты рождения"""
+    await callback.message.edit_text(
+        "🛑 Зауваження: дата народження не може бути менша ніж 2000 рік та не більша ніж 2014.\n\n"
+        "2) Напишіть вашу дату народження в такому форматі:\n"
+        "24.08.2000"
+    )
+    await state.set_state(RegistrationStates.waiting_for_birth_date)
+    _, data = await db.get_registration_state(callback.from_user.id)
+    await db.save_registration_state(callback.from_user.id, "waiting_for_birth_date", data)
+    await callback.answer()
+
+
+@router.callback_query(F.data == "reg_back_photo")
+async def reg_back_photo(callback: CallbackQuery, state: FSMContext, db):
+    """Вернуться к шагу загрузки фото"""
+    await callback.message.edit_text(
+        "🤳 Відправте своє фото формату 3х4, як показано на прикладі.\n\n"
+        "🛑 САМЕ 3х4!!!"
+    )
+    await state.set_state(RegistrationStates.waiting_for_photo)
+    _, data = await db.get_registration_state(callback.from_user.id)
+    await db.save_registration_state(callback.from_user.id, "waiting_for_photo", data)
+    await callback.answer()
+
+
+@router.callback_query(F.data == "reg_back_login")
+async def reg_back_login(callback: CallbackQuery, state: FSMContext, db):
+    """Вернуться к шагу ввода логина"""
+    await callback.message.edit_text(
+        "💾 Реєстрація в застосунку\n\n"
+        "При заході в Diia ви повинні будете авторизовуватись в системі, "
+        "тому зараз необхідно придумати логін та пароль до входу\n\n"
+        "🔑 Розпочнемо, придумайте логін та напишіть його який би ви хотіли використовувати при авторизації.\n"
+        "🛑 Уточнення: довжина логіна та паролю повинна бути від 4 до 16 символів.\n\n"
+        "🪶 Введіть логін:"
+    )
+    await state.set_state(RegistrationStates.waiting_for_login)
+    _, data = await db.get_registration_state(callback.from_user.id)
+    await db.save_registration_state(callback.from_user.id, "waiting_for_login", data)
+    await callback.answer()
+
+
+# Обработчики для редактирования из предпросмотра
+@router.callback_query(F.data == "reg_edit_full_name")
+async def reg_edit_full_name(callback: CallbackQuery, state: FSMContext, db):
+    """Редактировать ПІБ из предпросмотра"""
+    await callback.message.edit_text(
+        "✏️ Редагування ПІБ\n\n"
+        "Напишіть ваше ПІБ в такому форматі:\n"
+        "Маск Ілон Максимович"
+    )
+    await state.set_state(RegistrationStates.waiting_for_full_name)
+    _, data = await db.get_registration_state(callback.from_user.id)
+    await db.save_registration_state(callback.from_user.id, "waiting_for_full_name", data)
+    await callback.answer()
+
+
+@router.callback_query(F.data == "reg_edit_birth_date")
+async def reg_edit_birth_date(callback: CallbackQuery, state: FSMContext, db):
+    """Редактировать дату рождения из предпросмотра"""
+    await callback.message.edit_text(
+        "✏️ Редагування дати народження\n\n"
+        "🛑 Зауваження: дата народження не може бути менша ніж 2000 рік та не більша ніж 2014.\n\n"
+        "Напишіть вашу дату народження в такому форматі:\n"
+        "24.08.2000"
+    )
+    await state.set_state(RegistrationStates.waiting_for_birth_date)
+    _, data = await db.get_registration_state(callback.from_user.id)
+    await db.save_registration_state(callback.from_user.id, "waiting_for_birth_date", data)
+    await callback.answer()
+
+
+@router.callback_query(F.data == "reg_edit_photo")
+async def reg_edit_photo(callback: CallbackQuery, state: FSMContext, db):
+    """Редактировать фото из предпросмотра"""
+    await callback.message.edit_text(
+        "✏️ Редагування фото\n\n"
+        "🤳 Відправте своє фото формату 3х4, як показано на прикладі.\n\n"
+        "🛑 САМЕ 3х4!!!"
+    )
+    await state.set_state(RegistrationStates.waiting_for_photo)
+    _, data = await db.get_registration_state(callback.from_user.id)
+    await db.save_registration_state(callback.from_user.id, "waiting_for_photo", data)
+    await callback.answer()
+
+
+@router.callback_query(F.data == "reg_edit_login")
+async def reg_edit_login(callback: CallbackQuery, state: FSMContext, db):
+    """Редактировать логин из предпросмотра"""
+    await callback.message.edit_text(
+        "✏️ Редагування логіну\n\n"
+        "🔑 Придумайте логін та напишіть його який би ви хотіли використовувати при авторизації.\n"
+        "🛑 Уточнення: довжина логіна повинна бути від 4 до 16 символів.\n\n"
+        "🪶 Введіть логін:"
+    )
+    await state.set_state(RegistrationStates.waiting_for_login)
+    _, data = await db.get_registration_state(callback.from_user.id)
+    await db.save_registration_state(callback.from_user.id, "waiting_for_login", data)
+    await callback.answer()
+
+
+@router.callback_query(F.data == "reg_edit_password")
+async def reg_edit_password(callback: CallbackQuery, state: FSMContext, db):
+    """Редактировать пароль из предпросмотра"""
+    await callback.message.edit_text(
+        "✏️ Редагування паролю\n\n"
+        "🛑 Уточнення: ми не знаємо ваших паролів, одразу після його написання, "
+        "ми видалимо повідомлення в Телеграммі.\n\n"
+        "Придумайте пароль та напишіть його.\n"
+        "🛑 Довжина паролю повинна бути від 4 до 16 символів."
+    )
+    await state.set_state(RegistrationStates.waiting_for_password)
+    _, data = await db.get_registration_state(callback.from_user.id)
+    # Удаляем старый пароль из данных
+    if 'password' in data:
+        del data['password']
+    await db.save_registration_state(callback.from_user.id, "waiting_for_password", data)
+    await callback.answer()
 
 
 
